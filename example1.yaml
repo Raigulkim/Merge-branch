@@ -1,0 +1,273 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Network for VPC, ELB, Subnets
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: Enter t2.micro or t3.micro. Default t2.micro
+  VPCCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    Default: 10.2.0.0/16
+   
+Mappings:
+  AmiMapping:
+    us-east-1: 
+      AmiID: ami-0c101f26f147fa7fd
+    us-west-2:
+      AmiID: ami-0a70b9d193ae8a799
+
+Resources:
+  RaigulVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RaigulVPC
+      CidrBlock: 10.2.2.0/24
+      AvailabilityZone: us-west-2a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RaigulVPC
+      CidrBlock: 10.2.4.0/24
+      AvailabilityZone: us-west-2b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Owner
+          Value: Raigul
+      
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RaigulVPC
+      CidrBlock: 10.2.6.0/24
+      AvailabilityZone: us-west-2c
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref RaigulVPC
+      CidrBlock: 10.2.8.0/24
+      AvailabilityZone: us-west-2d
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Owner
+          Value: Raigul
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref RaigulVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RaigulVPC
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref RouteTable
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref RouteTable
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: !Ref RaigulVPC
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Owner
+          Value: Raigul
+    DependsOn: EIP
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RaigulVPC
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable 
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic to ELB
+      GroupName: Raigul-SG
+      VpcId: !Ref RaigulVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Owner
+          Value: Raigul
+           
+  ELB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: Raigul-ELB
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref SecurityGroup
+      Tags:
+        - Key: Owner
+          Value: Raigul
+  
+  KeyPair: 
+    Type: AWS::EC2::KeyPair
+    Properties: 
+      KeyName: MyNewKey
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: MyTargets
+      VpcId: !Ref RaigulVPC
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      Tags:
+        - Key: Owner
+          Value: Raigul
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ELB
+      Port: 80
+      Protocol: HTTP
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: LaunchTemplate
+      LaunchTemplateData:
+        ImageId: !FindInMap [ AmiMapping, !Ref "AWS::Region", AmiID ]
+        KeyName: !Ref KeyPair
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Owner
+                Value: Raigul
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum install httpd -y
+            systemctl enable httpd
+            systemctl start httpd
+            echo "<h1> Hello, Raigul!!! $HOSTNAME </h1>" > /var/www/html/index.html 
+
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: Raigul-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        #- !Ref PublicSubnet2
+        
+        - !Ref PrivateSubnet1
+        #- !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref TargetGroup
+
+Outputs:
+  ELBDNSName:
+    Value: !GetAtt ELB.DNSName
+    Description: DNS Name of the Application Load Balancer
+  CidrBlock: !GetAtt RaigulVPC.Cidrblock
