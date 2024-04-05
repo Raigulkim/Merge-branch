@@ -273,3 +273,4 @@ Outputs:
   CidrBlock: !GetAtt RaigulVPC.Cidrblock
 
   # 1234
+  # new change
